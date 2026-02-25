@@ -102,6 +102,37 @@ app.post('/api/admin/delete-user', async (req, res) => {
     }
 });
 
+// Update Email Endpoint (keeps same UID, updates Firebase Auth email only)
+app.post('/api/admin/update-email', async (req, res) => {
+    try {
+        const { uid, newEmail } = req.body;
+
+        if (!uid || !newEmail) {
+            return res.status(400).json({
+                success: false,
+                error: 'Both uid and newEmail are required'
+            });
+        }
+
+        const cleanEmail = newEmail.toLowerCase().trim();
+        await admin.auth().updateUser(uid, { email: cleanEmail });
+
+        console.log(`✅ Email updated for UID ${uid} → ${cleanEmail}`);
+
+        res.json({
+            success: true,
+            message: `Auth email updated to ${cleanEmail}. UID preserved.`
+        });
+
+    } catch (error) {
+        console.error('❌ Update email error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
 // Start server
 app.listen(port, () => {
     console.log(`🚀 CheckinPlus Backend API running at http://localhost:${port}`);
