@@ -133,6 +133,62 @@ app.post('/api/admin/update-email', async (req, res) => {
     }
 });
 
+// Delete all Firebase Auth accounts where email starts with a given prefix
+// Body: { "prefix": "22ad" }
+app.post('/api/admin/purge-auth-by-email-prefix', async (req, res) => {
+    try {
+        const { prefix } = req.body;
+        if (!prefix) return res.status(400).json({ success: false, error: 'prefix is required' });
+
+        const lowerPrefix = prefix.toLowerCase().trim();
+        const uidsToDelete = [];
+        let pageToken = undefined;
+
+        // Page through ALL auth users and collect matching UIDs
+        do {
+            const listResult = await admin.auth().listUsers(1000, pageToken);
+            listResult.users.forEach(u => {
+                if (u.email && u.email.toLowerCase().startsWith(lowerPrefix)) {
+                    uidsToDelete.push(u.uid);
+                }
+            });
+            pageToken = listResult.pageToken;
+        } while (pageToken);
+
+        if (uidsToDelete.length === 0) {
+            return res.json({ success: true, message: `No accounts found with email starting with "${prefix}"`, deleted: 0, failed: 0 });
+        }
+
+        console.log(`🗑️  Deleting ${uidsToDelete.length} Auth account(s) with email prefix "${prefix}"...`);
+
+        let totalDeleted = 0;
+        let totalFailed = 0;
+        const errors = [];
+
+        for (let i = 0; i < uidsToDelete.length; i += 1000) {
+            const batch = uidsToDelete.slice(i, i + 1000);
+            const result = await admin.auth().deleteUsers(batch);
+            totalDeleted += result.successCount;
+            totalFailed += result.failureCount;
+            result.errors.forEach(e => errors.push({ uid: batch[e.index], error: e.error.message }));
+        }
+
+        console.log(`✅ Prefix purge complete — deleted: ${totalDeleted}, failed: ${totalFailed}`);
+
+        res.json({
+            success: true,
+            message: `Deleted ${totalDeleted} account(s) with email starting with "${prefix}"`,
+            deleted: totalDeleted,
+            failed: totalFailed,
+            errors
+        });
+
+    } catch (error) {
+        console.error('❌ Prefix purge error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // Bulk Delete ALL Student Auth Accounts
 // Reads every doc in the 'students' Firestore collection, then deletes their
 // Firebase Auth accounts in batches of 1000 using deleteUsers().
