@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: checkinplus-backend
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false   # You will paste this value manually in the Render dashboard
