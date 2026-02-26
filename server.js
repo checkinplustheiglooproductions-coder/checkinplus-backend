@@ -238,6 +238,42 @@ app.post('/api/admin/purge-student-auth', async (req, res) => {
     }
 });
 
+// ── Purge all request collections ─────────────────────────────────────────
+app.post('/api/admin/purge-all-requests', async (req, res) => {
+    try {
+        const db = admin.firestore();
+        const collections = [
+            'leave_requests', 'onduty_requests', 'outing_requests',
+            'leave_approval', 'od_requests'  // legacy collection names
+        ];
+
+        let totalDeleted = 0;
+
+        for (const colName of collections) {
+            const snapshot = await db.collection(colName).get();
+            if (snapshot.empty) continue;
+
+            // Delete in batches of 400
+            const chunks = [];
+            for (let i = 0; i < snapshot.docs.length; i += 400) {
+                chunks.push(snapshot.docs.slice(i, i + 400));
+            }
+            for (const chunk of chunks) {
+                const batch = db.batch();
+                chunk.forEach(doc => batch.delete(doc.ref));
+                await batch.commit();
+                totalDeleted += chunk.length;
+            }
+            console.log(`🗑️  Purged ${snapshot.docs.length} docs from ${colName}`);
+        }
+
+        res.json({ success: true, deleted: totalDeleted });
+    } catch (error) {
+        console.error('❌ Purge all requests error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // Start server
 app.listen(port, () => {
     console.log(`🚀 CheckinPlus Backend API running at http://localhost:${port}`);
