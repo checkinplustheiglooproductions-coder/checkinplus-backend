@@ -3,6 +3,7 @@ const cors = require('cors');
 const admin = require('firebase-admin');
 const fs = require('fs');
 const path = require('path');
+const { startNotificationWatchers } = require('./src/services/notificationWatcher');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -31,6 +32,16 @@ try {
     }
 } catch (error) {
     console.error('❌ Firebase Admin SDK initialization failed:', error.message);
+}
+
+// ── Push Notification Watchers ─────────────────────────────────────────────
+// Starts Firestore onSnapshot listeners that send Expo push notifications
+// to students when requests are approved/rejected, marks change, etc.
+// Runs continuously inside this Express process — no paid Firebase plan needed.
+try {
+    startNotificationWatchers(admin);
+} catch (err) {
+    console.error('❌ Failed to start notification watchers:', err.message);
 }
 
 // Routes
