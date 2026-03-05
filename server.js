@@ -8,6 +8,11 @@ const { startNotificationWatchers } = require('./src/services/notificationWatche
 const app = express();
 const port = process.env.PORT || 3001;
 
+// ── Health tracking flags ──────────────────────────────────────────────────
+let firebaseReady = false;
+let watchersReady = false;
+const startTime = Date.now();
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -19,12 +24,14 @@ try {
     if (process.env.FIREBASE_SERVICE_ACCOUNT_JSON) {
         const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
         admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+        firebaseReady = true;
         console.log('✅ Firebase Admin SDK initialized from environment variable');
     } else {
         const serviceAccountPath = path.join(__dirname, '..', 'serviceAccountKey.json');
         if (fs.existsSync(serviceAccountPath)) {
             const serviceAccount = require(serviceAccountPath);
             admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+            firebaseReady = true;
             console.log('✅ Firebase Admin SDK initialized from serviceAccountKey.json');
         } else {
             console.warn('⚠️  No service account found. Set FIREBASE_SERVICE_ACCOUNT_JSON env var or add serviceAccountKey.json');
@@ -40,6 +47,7 @@ try {
 // Runs continuously inside this Express process — no paid Firebase plan needed.
 try {
     startNotificationWatchers(admin);
+    watchersReady = true;
 } catch (err) {
     console.error('❌ Failed to start notification watchers:', err.message);
 }
@@ -47,6 +55,38 @@ try {
 // Routes
 app.get('/', (req, res) => {
     res.json({ message: 'CheckinPlus Backend API', status: 'running' });
+});
+
+// Health / Diagnostics endpoint — used by mobile system-status screen and web dashboard
+app.get('/api/health', async (req, res) => {
+    const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
+    const hh = String(Math.floor(uptimeSeconds / 3600)).padStart(2, '0');
+    const mm = String(Math.floor((uptimeSeconds % 3600) / 60)).padStart(2, '0');
+    const ss = String(uptimeSeconds % 60).padStart(2, '0');
+
+    // Probe Expo Push API reachability (server-side, no CORS issue)
+    let expoPushReachable = false;
+    try {
+        const ctrl = new AbortController();
+        const tid = setTimeout(() => ctrl.abort(), 5000);
+        const expoRes = await fetch('https://exp.host/--/api/v2/push/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify([]),
+            signal: ctrl.signal,
+        });
+        clearTimeout(tid);
+        expoPushReachable = expoRes.status < 500;
+    } catch { /* unreachable */ }
+
+    res.json({
+        status: 'ok',
+        firebase: firebaseReady,
+        notificationWatchers: watchersReady,
+        expoPushReachable,
+        uptime: `${hh}:${mm}:${ss}`,
+        timestamp: new Date().toISOString(),
+    });
 });
 
 // Password Reset Endpoint
